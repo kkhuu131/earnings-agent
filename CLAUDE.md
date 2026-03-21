@@ -314,9 +314,9 @@ This is the sequence to follow. Do not skip ahead.
 
 ## Current Priority
 
-**NEXT: Step 6 — PortfolioManager**
+**NEXT: Step 7 — LangGraph graph**
 
-Steps 1–5 are complete and tested:
+Steps 1–6 are complete and tested:
 
 **Step 1 — Data pipeline** ✅
 - `backend/data/edgar.py` — SEC EDGAR transcript fetcher with retry/backoff
@@ -362,13 +362,24 @@ Steps 1–5 are complete and tested:
 - Debate loop pattern: caller alternates `analyze` → `analyze_rebuttal` for `settings.max_debate_rounds` rounds, passing the opponent's last response as `opposing_argument` each time
 - `tests/agents/test_bull_researcher.py` + `tests/agents/test_bear_researcher.py` — 52 tests, all passing
 
-Build PortfolioManager next:
+**Step 6 — PortfolioManager** ✅
+- `backend/agents/portfolio_manager.py` — concrete `PortfolioManager` inheriting `BaseAgent`:
+  - `analyze({"fundamentals", "sentiment", "technical", "debate": [{"bull": {...}, "bear": {...}}, ...]}) -> {"direction", "confidence", "reasoning", "weighted_signals"}`
+  - Formats debate as multi-round transcript in the prompt
+  - Uses deep model; prompt enforces raw JSON only output
+  - Equal weights (0.2 each) for all five signal sources; reputation weighting deferred to Step 10
+- `tests/agents/test_portfolio_manager.py` — 29 tests, all passing
 
-1. `backend/agents/portfolio_manager.py` — concrete `PortfolioManager` inheriting `BaseAgent`.
-   Receives all three analyst reports + the full debate transcript (list of bull/bear round dicts).
-   Applies equal weights initially (reputation weighting added in Step 10).
-   Returns: `{ direction: "up"|"down"|"neutral", confidence: 0-1, reasoning: str, weighted_signals: {} }`
+Build LangGraph graph next:
 
-2. Unit tests in `tests/agents/test_portfolio_manager.py` — same mock pattern.
+1. `backend/graph/earnings_graph.py` — LangGraph `StateGraph` wiring all agents.
+   - State type carries transcript, price_data, analyst reports, debate rounds, and final prediction.
+   - Analyst team nodes (fundamentals, sentiment, technical) run in parallel via `Send` or fan-out.
+   - Debate loop runs BullResearcher and BearResearcher for `settings.max_debate_rounds` rounds sequentially.
+   - PortfolioManager node reads all accumulated state and produces the final prediction.
+   - Graph is compiled and exported as a callable `run_pipeline(ticker, transcript, price_data) -> dict`.
+
+2. Unit tests in `tests/graph/test_earnings_graph.py` — mock all six agents, verify node execution order,
+   correct number of debate rounds, and that final state contains the prediction dict.
 
 Update this section at the start of every Claude Code session.

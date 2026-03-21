@@ -5,7 +5,7 @@ FastAPI validation layer before any agent or database code runs.
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
@@ -57,3 +57,33 @@ class PredictionRecord(BaseModel):
     weighted_signals: Optional[dict] = None
     actual_direction: Optional[str] = None
     was_correct: Optional[bool] = None
+
+
+# ---------------------------------------------------------------------------
+# POST /backtest
+# ---------------------------------------------------------------------------
+
+
+class BacktestRequest(BaseModel):
+    """Payload for a historical backtest run."""
+
+    tickers: list[str]
+    start_date: date
+    end_date: date
+
+
+class TickerSummary(BaseModel):
+    """Per-ticker accuracy breakdown within a BacktestResponse."""
+
+    total: int
+    correct: int
+    accuracy: float
+
+
+class BacktestResponse(BaseModel):
+    """Returned after a successful backtest run."""
+
+    total: int
+    correct: int
+    accuracy: float
+    per_ticker: dict[str, TickerSummary]

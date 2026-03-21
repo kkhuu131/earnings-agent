@@ -314,9 +314,9 @@ This is the sequence to follow. Do not skip ahead.
 
 ## Current Priority
 
-**NEXT: Step 9 — Backtesting runner**
+**NEXT: Step 10 — Reputation system**
 
-Steps 1–8 are complete and tested:
+Steps 1–9 are complete and tested:
 
 **Step 1 — Data pipeline** ✅
 - `backend/data/edgar.py` — SEC EDGAR transcript fetcher with retry/backoff
@@ -389,15 +389,28 @@ Steps 1–8 are complete and tested:
 - `backend/main.py` — FastAPI app with lifespan placeholder; both routers mounted under `/api/v1`
 - `tests/api/test_analyze.py` + `tests/api/test_predictions.py` — 37 tests, all passing
 
-Build the backtesting runner next:
+**Step 9 — Backtesting runner** ✅
+- `backend/backtest/runner.py` — `run_backtest(tickers, start_date, end_date)` async function:
+  - Loads Transcript rows from DB for given tickers and date range
+  - Matches each transcript to its PriceSnapshot by (ticker, filing_date)
+  - Calls `run_pipeline(transcript_text, price_data)` for each
+  - Persists Prediction rows with `actual_direction` and `was_correct` filled in
+  - Skips gracefully on missing snapshot, empty/None text, or pipeline exception
+  - Returns `BacktestSummary`: `{ total, correct, accuracy, per_ticker }`
+- `backend/api/schemas.py` — added `BacktestRequest` (tickers, start_date, end_date), `TickerSummary`, `BacktestResponse`
+- `backend/api/routes/backtest.py` — `POST /backtest`: calls `run_backtest`, returns `BacktestResponse`
+- `backend/main.py` — backtest router mounted under `/api/v1`
+- `tests/backtest/test_runner.py` + `tests/api/test_backtest.py` — 45 tests, all passing
 
-1. `backend/backtest/runner.py` — `run_backtest(tickers, start_date, end_date)` async function:
-   - Fetches transcripts from `transcripts` table for the given tickers and date range
-   - For each transcript, fetches the corresponding `PriceSnapshot` (30d direction pre-computed)
-   - Calls `run_pipeline(transcript, price_data)` for each
-   - Stores the result as a `Prediction` row with `actual_direction` and `was_correct` filled in
-2. `backend/api/routes/backtest.py` — `POST /backtest` route that accepts `BacktestRequest` and calls `runner.run_backtest`; mount in `main.py`
-3. `backend/api/schemas.py` — add `BacktestRequest` and `BacktestResponse` schemas
-4. Unit tests in `tests/backtest/test_runner.py` — mock `run_pipeline`, DB session, and data fetchers; verify correct/incorrect labelling logic and DB writes
+Build the reputation system next:
+
+1. `backend/backtest/reputation.py` — `update_reputation(session)` async function:
+   - Reads all `Prediction` rows where `was_correct IS NOT NULL`
+   - Groups by the agent signals in `weighted_signals` JSONB to compute per-agent accuracy
+   - Upserts `AgentReputation` rows: `correct_predictions`, `total_predictions`, `accuracy`
+   - Recomputes normalised `weight` for each agent: `weight = accuracy / sum(all accuracies)`
+   - If all accuracies are 0, falls back to equal weights
+2. Hook reputation update into the backtest runner — call `update_reputation` at the end of `run_backtest`
+3. Unit tests in `tests/backtest/test_reputation.py` — mock DB session; verify upsert logic, weight normalisation, and equal-weight fallback
 
 Update this section at the start of every Claude Code session.

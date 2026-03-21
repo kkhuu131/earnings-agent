@@ -16,7 +16,8 @@
       "Bash(mkdir -p c:/Users/notke/Desktop/Personal/Projects/earnings-agent/tests/graph)",
       "Bash(touch c:/Users/notke/Desktop/Personal/Projects/earnings-agent/tests/graph/__init__.py)",
       "Bash(python -m pytest tests/graph/test_earnings_graph.py -v)",
-      "Bash(python -m pytest tests/api/ -v)"
+      "Bash(python -m pytest tests/api/ -v)",
+      "Bash(python -m pytest tests/backtest/test_runner.py tests/api/test_backtest.py -v)"
     ]
   }
 }

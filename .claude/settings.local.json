@@ -20,7 +20,15 @@
       "Bash(python -m pytest tests/backtest/test_runner.py tests/api/test_backtest.py -v)",
       "Bash(python -m pytest tests/backtest/test_reputation.py -v)",
       "Bash(python -m pytest tests/backtest/test_runner.py -v)",
-      "Bash(python -m pytest tests/backtest/ -v)"
+      "Bash(python -m pytest tests/backtest/ -v)",
+      "Bash(python3 \"C:\\\\Users\\\\notke\\\\.claude\\\\plugins\\\\cache\\\\ui-ux-pro-max-skill\\\\ui-ux-pro-max\\\\2.0.1\\\\.claude\\\\skills\\\\ui-ux-pro-max\\\\scripts\\\\search.py\" \"fintech analytics dashboard data-driven SaaS dark\" --design-system -p \"Earnings Agent\" -f markdown)",
+      "Bash(python \"C:\\\\Users\\\\notke\\\\.claude\\\\plugins\\\\cache\\\\ui-ux-pro-max-skill\\\\ui-ux-pro-max\\\\2.0.1\\\\.claude\\\\skills\\\\ui-ux-pro-max\\\\scripts\\\\search.py\" \"fintech analytics dashboard data-driven SaaS dark\" --design-system -p \"Earnings Agent\" -f markdown)",
+      "Bash(python \"C:\\\\Users\\\\notke\\\\.claude\\\\plugins\\\\cache\\\\ui-ux-pro-max-skill\\\\ui-ux-pro-max\\\\2.0.1\\\\cli\\\\assets\\\\scripts\\\\search.py\" \"fintech analytics dashboard data-driven SaaS dark\" --design-system -p \"Earnings Agent\" -f markdown)",
+      "Bash(python \"C:\\\\Users\\\\notke\\\\.claude\\\\plugins\\\\cache\\\\ui-ux-pro-max-skill\\\\ui-ux-pro-max\\\\2.0.1\\\\cli\\\\assets\\\\scripts\\\\search.py\" \"chart bar line financial analytics\" --domain chart)",
+      "Bash(npx create-next-app@latest frontend --typescript --tailwind --app --no-eslint --no-src-dir --import-alias \"@/*\" --yes)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)"
     ]
   }
 }

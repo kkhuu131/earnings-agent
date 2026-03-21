@@ -8,6 +8,7 @@ needed rather than at import time.
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.routes.analyze import router as analyze_router
 from backend.api.routes.backtest import router as backtest_router
@@ -25,6 +26,13 @@ app = FastAPI(
     description="Multi-agent LLM framework for earnings call transcript analysis.",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 app.include_router(analyze_router, prefix="/api/v1")

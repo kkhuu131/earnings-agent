@@ -1,0 +1,42 @@
+import type {
+  AnalyzeRequest,
+  AnalyzeResponse,
+  BacktestRequest,
+  BacktestResponse,
+  PredictionRecord,
+} from "./types";
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    ...options,
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`API ${res.status}: ${body}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export function analyze(payload: AnalyzeRequest): Promise<AnalyzeResponse> {
+  return request<AnalyzeResponse>("/analyze", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getPredictions(ticker?: string, limit = 50): Promise<PredictionRecord[]> {
+  const params = new URLSearchParams();
+  if (ticker) params.set("ticker", ticker);
+  params.set("limit", String(limit));
+  return request<PredictionRecord[]>(`/predictions?${params.toString()}`);
+}
+
+export function runBacktest(payload: BacktestRequest): Promise<BacktestResponse> {
+  return request<BacktestResponse>("/backtest", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}

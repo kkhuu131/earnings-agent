@@ -314,9 +314,9 @@ This is the sequence to follow. Do not skip ahead.
 
 ## Current Priority
 
-**NEXT: Step 7 — LangGraph graph**
+**NEXT: Step 8 — FastAPI routes**
 
-Steps 1–6 are complete and tested:
+Steps 1–7 are complete and tested:
 
 **Step 1 — Data pipeline** ✅
 - `backend/data/edgar.py` — SEC EDGAR transcript fetcher with retry/backoff
@@ -370,16 +370,21 @@ Steps 1–6 are complete and tested:
   - Equal weights (0.2 each) for all five signal sources; reputation weighting deferred to Step 10
 - `tests/agents/test_portfolio_manager.py` — 29 tests, all passing
 
-Build LangGraph graph next:
+**Step 7 — LangGraph graph** ✅
+- `backend/graph/earnings_graph.py` — LangGraph `StateGraph` wiring all six agents:
+  - `PipelineState` TypedDict carries transcript, price_data, fundamentals, sentiment, technical, debate, prediction
+  - `analysts` node: FundamentalsAnalyst, SentimentAnalyst, TechnicalAnalyst run concurrently via `asyncio.gather`
+  - `debate` node: BullResearcher and BearResearcher run for `settings.max_debate_rounds` rounds; round 0 calls `.analyze()`, rounds 1+ call `.analyze_rebuttal()` with the opponent's prior argument
+  - `portfolio_manager` node: reads all accumulated state, writes final prediction
+  - `run_pipeline(transcript, price_data, settings?) -> dict` async entry point compiles and invokes the graph
+- `tests/graph/test_earnings_graph.py` — 28 tests, all passing
 
-1. `backend/graph/earnings_graph.py` — LangGraph `StateGraph` wiring all agents.
-   - State type carries transcript, price_data, analyst reports, debate rounds, and final prediction.
-   - Analyst team nodes (fundamentals, sentiment, technical) run in parallel via `Send` or fan-out.
-   - Debate loop runs BullResearcher and BearResearcher for `settings.max_debate_rounds` rounds sequentially.
-   - PortfolioManager node reads all accumulated state and produces the final prediction.
-   - Graph is compiled and exported as a callable `run_pipeline(ticker, transcript, price_data) -> dict`.
+Build FastAPI routes next:
 
-2. Unit tests in `tests/graph/test_earnings_graph.py` — mock all six agents, verify node execution order,
-   correct number of debate rounds, and that final state contains the prediction dict.
+1. `backend/api/schemas.py` — Pydantic request/response models for `/analyze`, `/backtest`, `/predictions`.
+2. `backend/api/routes/analyze.py` — `POST /analyze` that calls `run_pipeline` and stores result in DB.
+3. `backend/api/routes/predictions.py` — `GET /predictions` that returns stored prediction history.
+4. `backend/main.py` — FastAPI app with routers mounted.
+5. Unit tests in `tests/api/` — mock `run_pipeline` and DB session; verify status codes, response shapes.
 
 Update this section at the start of every Claude Code session.

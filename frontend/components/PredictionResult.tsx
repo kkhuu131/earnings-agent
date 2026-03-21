@@ -131,7 +131,7 @@ export default function PredictionResult({ result }: Props) {
                 >
                   {data.signal}
                 </span>
-                <ConfidenceBar value={data.confidence} />
+                <ConfidenceBar value={data.weight} />
               </div>
             ))}
           </div>

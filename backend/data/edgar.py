@@ -1,7 +1,7 @@
 """SEC EDGAR transcript fetcher.
 
 Fetches earnings call transcripts from 8-K filings using the EDGAR
-full-text search API (EFTS). Returns clean text with metadata.
+submissions API. Returns clean text with metadata.
 
 Usage:
     import asyncio
@@ -28,12 +28,13 @@ logger = logging.getLogger(__name__)
 # https://www.sec.gov/os/accessing-edgar-data
 USER_AGENT = "earnings-agent research@earnings-agent.io"
 
-EFTS_SEARCH_URL = "https://efts.sec.gov/LATEST/search-index"
+SUBMISSIONS_URL = "https://data.sec.gov/submissions"
 EDGAR_ARCHIVES = "https://www.sec.gov/Archives/edgar/data"
 COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 
-# EDGAR fair access policy: max 10 requests/second
-_REQUEST_DELAY = 0.11  # seconds between each outbound request
+# EDGAR fair access policy: max 10 requests/second, but Archives is more
+# sensitive — use a conservative 0.5s to avoid 503s from that endpoint
+_REQUEST_DELAY = 0.5  # seconds between each outbound request
 
 # Retry configuration for transient HTTP errors
 _RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
@@ -200,32 +201,70 @@ async def _resolve_cik(ticker: str, client: httpx.AsyncClient) -> str:
 
 
 # ---------------------------------------------------------------------------
-# EFTS full-text search
+# Submissions API — filing list
 # ---------------------------------------------------------------------------
 
 
-async def _search_efts(
-    ticker: str,
-    client: httpx.AsyncClient,
-    fetch_size: int,
-) -> list[dict]:
-    """Query EDGAR EFTS for 8-K filings mentioning 'earnings call'."""
-    params = {
-        "q": '"earnings call"',
-        "forms": "8-K",
-        "entity": ticker,
-        "dateRange": "custom",
-        "startdt": "2010-01-01",
-        "enddt": datetime.now(UTC).strftime("%Y-%m-%d"),
-        "_source": "period_of_report,entity_name,file_date,accession_no,display_names",
-        "from": 0,
-        "size": fetch_size,
-    }
+async def _fetch_submissions(cik: str, client: httpx.AsyncClient) -> list[dict]:
+    """Fetch all filings for a company from the EDGAR submissions API.
+
+    The submissions JSON contains parallel arrays under filings.recent. There
+    may also be additional paginated files listed under filings.files — each is
+    fetched and merged in.
+
+    Args:
+        cik: Zero-padded 10-digit CIK string (e.g. "0001045810").
+        client: Shared httpx.AsyncClient.
+
+    Returns:
+        List of filing dicts, each with keys: accessionNumber, filingDate,
+        form, primaryDocument, items.
+    """
+    url = f"{SUBMISSIONS_URL}/CIK{cik}.json"
     await asyncio.sleep(_REQUEST_DELAY)
-    resp = await _retrying_get(client, EFTS_SEARCH_URL, params=params)
-    hits = resp.json().get("hits", {}).get("hits", [])
-    logger.info("EFTS returned %d hits for '%s'", len(hits), ticker)
-    return hits
+    resp = await _retrying_get(client, url)
+    data = resp.json()
+
+    company_name: str = data.get("name", "")
+    filings_block = data.get("filings", {})
+
+    def _zip_recent(recent: dict) -> list[dict]:
+        """Zip parallel arrays in a filings.recent block into a list of dicts."""
+        acc_nums = recent.get("accessionNumber", [])
+        filing_dates = recent.get("filingDate", [])
+        forms = recent.get("form", [])
+        primary_docs = recent.get("primaryDocument", [])
+        items_list = recent.get("items", [])
+
+        results = []
+        for i, acc in enumerate(acc_nums):
+            results.append({
+                "accessionNumber": acc,
+                "filingDate": filing_dates[i] if i < len(filing_dates) else "",
+                "form": forms[i] if i < len(forms) else "",
+                "primaryDocument": primary_docs[i] if i < len(primary_docs) else "",
+                "items": items_list[i] if i < len(items_list) else "",
+                "companyName": company_name,
+            })
+        return results
+
+    all_filings = _zip_recent(filings_block.get("recent", {}))
+
+    # Follow paginated filing pages if present
+    for page_ref in filings_block.get("files", []):
+        page_name = page_ref.get("name", "")
+        if not page_name:
+            continue
+        page_url = f"{SUBMISSIONS_URL}/{page_name}"
+        await asyncio.sleep(_REQUEST_DELAY)
+        try:
+            page_resp = await _retrying_get(client, page_url)
+            page_data = page_resp.json()
+            all_filings.extend(_zip_recent(page_data))
+        except Exception as exc:
+            logger.warning("Failed to fetch submissions page %s: %s", page_url, exc)
+
+    return all_filings
 
 
 # ---------------------------------------------------------------------------
@@ -240,8 +279,9 @@ async def _get_document_url(
 ) -> Optional[str]:
     """Fetch the filing index JSON and return the best document URL.
 
-    Prefers EX-99.1 exhibits (typical for transcripts), then falls back to
-    the primary document (sequence 1), then the first document.
+    Prefers EX-99.2 exhibits (standard slot for transcripts), then EX-99.1
+    (press release / earnings release), then falls back to the primary
+    document (sequence 1), then the first document.
     """
     cik_int = str(int(cik))           # strip leading zeros for archive path
     acc_nodash = accession_number.replace("-", "")
@@ -263,21 +303,31 @@ async def _get_document_url(
     if not documents:
         return None
 
-    # Score documents: EX-99.1 > primary > first
-    exhibit = None
+    # Score documents: EX-99.2 (transcript) > EX-99.1 (press release) > primary > first
+    exhibit_992 = None
+    exhibit_991 = None
     primary = None
     for doc in documents:
         doc_type = doc.get("type", "")
         filename = doc.get("filename", "").lower()
-        is_exhibit = "99.1" in doc_type or "ex99" in filename or "ex-99" in filename
+        is_992 = "99.2" in doc_type or "ex99.2" in filename or "ex-99.2" in filename
+        is_991 = (
+            "99.1" in doc_type
+            or "ex99.1" in filename
+            or "ex-99.1" in filename
+            # Catch legacy naming patterns like ex991.htm (no separator)
+            or (("ex99" in filename or "ex-99" in filename) and "99.2" not in doc_type)
+        )
         is_primary = doc.get("sequence") == "1" or doc.get("sequence") == 1
 
-        if is_exhibit and exhibit is None:
-            exhibit = doc
+        if is_992 and exhibit_992 is None:
+            exhibit_992 = doc
+        if is_991 and exhibit_991 is None:
+            exhibit_991 = doc
         if is_primary and primary is None:
             primary = doc
 
-    chosen = exhibit or primary or documents[0]
+    chosen = exhibit_992 or exhibit_991 or primary or documents[0]
     filename = chosen.get("filename", "")
     if not filename:
         return None
@@ -306,8 +356,9 @@ async def _fetch_document_text(url: str, client: httpx.AsyncClient) -> Optional[
     else:
         text = _strip_html(raw)
 
-    # Reject documents that are too short to be a real transcript
-    if len(text.split()) < 300:
+    # Reject documents that are too short to be a real transcript.
+    # Press releases are typically 500–2 000 words; transcripts are 5 000–15 000.
+    if len(text.split()) < 2000:
         return None
 
     return text
@@ -321,9 +372,10 @@ async def _fetch_document_text(url: str, client: httpx.AsyncClient) -> Optional[
 async def fetch_transcripts(ticker: str, limit: int = 10) -> list[TranscriptResult]:
     """Fetch the most recent earnings call transcripts for a ticker from SEC EDGAR.
 
-    Searches 8-K filings for documents mentioning "earnings call", fetches each
-    filing document, strips HTML, and returns structured results sorted
-    newest-first.
+    Uses the EDGAR submissions API to find 8-K filings with item 2.02
+    (Results of Operations), which is the standard item code for earnings
+    results filings. Fetches each filing's exhibit document, strips HTML,
+    and returns structured results sorted newest-first.
 
     Args:
         ticker: US equity ticker symbol (e.g. "NVDA", "AAPL").
@@ -348,41 +400,67 @@ async def fetch_transcripts(ticker: str, limit: int = 10) -> list[TranscriptResu
     ) as client:
         # Step 1: ticker → CIK
         cik = await _resolve_cik(ticker, client)
+        company_name = ticker.upper()  # fallback; overwritten from submissions data
 
-        # Step 2: search EFTS — over-fetch to account for documents that turn
-        # out to be unusable (too short, wrong exhibit, etc.)
-        fetch_size = min(limit * 4, 40)
-        hits = await _search_efts(ticker, client, fetch_size)
+        # Step 2: fetch the company's full filing list from the submissions API
+        all_filings = await _fetch_submissions(cik, client)
 
-        if not hits:
-            logger.warning("No EFTS results found for '%s'", ticker)
-            return []
+        # Update company_name from the first filing that has it
+        for filing in all_filings:
+            if filing.get("companyName"):
+                company_name = filing["companyName"]
+                break
 
-        # Step 3: for each hit, resolve and fetch the document
+        # Step 3: filter to 8-K filings containing item 2.02
+        # (Results of Operations — standard item for earnings results)
+        candidates = []
+        for filing in all_filings:
+            if filing.get("form") != "8-K":
+                continue
+            items_str = filing.get("items", "") or ""
+            item_codes = [i.strip() for i in items_str.split(",")]
+            if "2.02" not in item_codes:
+                continue
+            candidates.append(filing)
+
+        # Step 4: sort newest first
+        def _parse_date(s: str) -> date:
+            try:
+                return datetime.strptime(s, "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                return date.min
+
+        candidates.sort(key=lambda f: _parse_date(f.get("filingDate", "")), reverse=True)
+
+        # Step 5: over-fetch candidates to account for press releases without transcripts
+        fetch_limit = min(limit * 10, len(candidates))
         results: list[TranscriptResult] = []
 
-        for hit in hits:
+        for filing in candidates[:fetch_limit]:
             if len(results) >= limit:
                 break
 
-            source = hit.get("_source", {})
-            accession_number = source.get("accession_no", "").strip()
+            accession_number = filing.get("accessionNumber", "").strip()
             if not accession_number:
                 continue
 
-            filing_date_str = source.get("file_date", "")
-            try:
-                filing_date = datetime.strptime(filing_date_str, "%Y-%m-%d").date()
-            except (ValueError, TypeError):
+            filing_date = _parse_date(filing.get("filingDate", ""))
+            if filing_date == date.min:
                 filing_date = date.today()
-
-            raw_name = source.get("entity_name", ticker)
-            company_name = raw_name[0] if isinstance(raw_name, list) else raw_name
 
             doc_url = await _get_document_url(cik, accession_number, client)
             if not doc_url:
-                logger.debug("No usable document URL for %s / %s", ticker, accession_number)
-                continue
+                # Filing index unavailable (404/503) — fall back to the primaryDocument
+                # filename already known from the submissions API.
+                primary_doc = filing.get("primaryDocument", "")
+                if primary_doc:
+                    cik_int = str(int(cik))
+                    acc_nodash = accession_number.replace("-", "")
+                    doc_url = f"{EDGAR_ARCHIVES}/{cik_int}/{acc_nodash}/{primary_doc}"
+                    logger.debug("Index unavailable for %s/%s — trying primary doc: %s", ticker, accession_number, primary_doc)
+                else:
+                    logger.debug("No usable document URL for %s / %s", ticker, accession_number)
+                    continue
 
             text = await _fetch_document_text(doc_url, client)
             if not text:
@@ -410,6 +488,6 @@ async def fetch_transcripts(ticker: str, limit: int = 10) -> list[TranscriptResu
                 filing_date,
             )
 
-        # Newest first
+        # Newest first (candidates are already sorted, but enforce after any ties)
         results.sort(key=lambda r: r.filing_date, reverse=True)
         return results[:limit]

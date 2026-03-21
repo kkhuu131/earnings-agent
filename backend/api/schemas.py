@@ -34,6 +34,7 @@ class AnalyzeResponse(BaseModel):
     confidence: float
     reasoning: str
     weighted_signals: dict
+    debate_transcript: Optional[list] = None
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +54,7 @@ class PredictionRecord(BaseModel):
     final_confidence: Optional[float] = None
     final_reasoning: Optional[str] = None
     agent_reports: Optional[dict] = None
-    debate_transcript: Optional[dict] = None
+    debate_transcript: Optional[list] = None
     weighted_signals: Optional[dict] = None
     actual_direction: Optional[str] = None
     was_correct: Optional[bool] = None

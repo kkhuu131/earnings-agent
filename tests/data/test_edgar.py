@@ -16,14 +16,14 @@ from backend.data.edgar import (
     _MAX_RETRIES,
     COMPANY_TICKERS_URL,
     EDGAR_ARCHIVES,
-    EFTS_SEARCH_URL,
+    SUBMISSIONS_URL,
     TranscriptResult,
     _fetch_document_text,
+    _fetch_submissions,
     _get_document_url,
     _infer_fiscal_quarter,
     _resolve_cik,
     _retrying_get,
-    _search_efts,
     _strip_html,
     fetch_transcripts,
 )
@@ -38,36 +38,66 @@ _COMPANY_TICKERS = {
     "1": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc"},
 }
 
-_EFTS_RESPONSE = {
-    "hits": {
-        "total": {"value": 2},
-        "hits": [
-            {
-                "_id": "hit1",
-                "_source": {
-                    "accession_no": "0001045810-24-000123",
-                    "file_date": "2024-05-22",
-                    "entity_name": "NVIDIA Corp",
-                    "period_of_report": "2024-04-28",
-                },
-            },
-            {
-                "_id": "hit2",
-                "_source": {
-                    "accession_no": "0001045810-23-000456",
-                    "file_date": "2023-08-23",
-                    "entity_name": "NVIDIA Corp",
-                    "period_of_report": "2023-07-26",
-                },
-            },
-        ],
-    }
+_SUBMISSIONS_CIK = "0001045810"
+_SUBMISSIONS_URL_FRAGMENT = f"CIK{_SUBMISSIONS_CIK}.json"
+
+_SUBMISSIONS_RESPONSE = {
+    "cik": "1045810",
+    "name": "NVIDIA Corp",
+    "filings": {
+        "recent": {
+            "accessionNumber": [
+                "0001045810-24-000123",
+                "0001045810-23-000456",
+            ],
+            "filingDate": [
+                "2024-05-22",
+                "2023-08-23",
+            ],
+            "form": [
+                "8-K",
+                "8-K",
+            ],
+            "primaryDocument": [
+                "d123456d8k.htm",
+                "d789012d8k.htm",
+            ],
+            "items": [
+                "2.02,9.01",
+                "2.02,9.01",
+            ],
+        },
+        "files": [],
+    },
+}
+
+_SUBMISSIONS_RESPONSE_NO_202 = {
+    "cik": "1045810",
+    "name": "NVIDIA Corp",
+    "filings": {
+        "recent": {
+            "accessionNumber": ["0001045810-24-000999"],
+            "filingDate": ["2024-03-01"],
+            "form": ["8-K"],
+            "primaryDocument": ["d999d8k.htm"],
+            "items": ["1.01,9.01"],
+        },
+        "files": [],
+    },
 }
 
 _FILING_INDEX_WITH_EXHIBIT = {
     "documents": [
         {"filename": "form8k.htm", "type": "8-K", "sequence": "1", "description": "Form 8-K"},
         {"filename": "ex991.htm", "type": "EX-99.1", "sequence": "2", "description": "Earnings Call"},
+    ]
+}
+
+_FILING_INDEX_WITH_EX992 = {
+    "documents": [
+        {"filename": "form8k.htm", "type": "8-K", "sequence": "1", "description": "Form 8-K"},
+        {"filename": "ex991.htm", "type": "EX-99.1", "sequence": "2", "description": "Press Release"},
+        {"filename": "ex992.htm", "type": "EX-99.2", "sequence": "3", "description": "Transcript"},
     ]
 }
 
@@ -79,8 +109,8 @@ _FILING_INDEX_PRIMARY_ONLY = {
 
 _FILING_INDEX_EMPTY = {"documents": []}
 
-# A document long enough to pass the 300-word minimum check
-_TRANSCRIPT_WORDS = " ".join(f"wordtoken{i}" for i in range(350))
+# A document long enough to pass the 2 000-word minimum check
+_TRANSCRIPT_WORDS = " ".join(f"wordtoken{i}" for i in range(2100))
 _TRANSCRIPT_HTML = f"<html><head><style>body{{}}</style></head><body><p>{_TRANSCRIPT_WORDS}</p></body></html>"
 
 
@@ -199,42 +229,68 @@ class TestResolveCik:
 
 
 # ---------------------------------------------------------------------------
-# _search_efts
+# _fetch_submissions
 # ---------------------------------------------------------------------------
 
 
-class TestSearchEfts:
-    async def test_returns_hits(self):
+class TestFetchSubmissions:
+    async def test_returns_filing_list(self):
         client = MockAsyncClient([
-            (EFTS_SEARCH_URL, MockResponse(json_data=_EFTS_RESPONSE)),
+            (_SUBMISSIONS_URL_FRAGMENT, MockResponse(json_data=_SUBMISSIONS_RESPONSE)),
         ])
-        hits = await _search_efts("NVDA", client, fetch_size=10)
-        assert len(hits) == 2
-        assert hits[0]["_source"]["accession_no"] == "0001045810-24-000123"
+        filings = await _fetch_submissions(_SUBMISSIONS_CIK, client)
+        assert len(filings) == 2
 
-    async def test_returns_empty_list_when_no_hits(self):
-        empty = {"hits": {"total": {"value": 0}, "hits": []}}
+    async def test_filing_fields_are_present(self):
         client = MockAsyncClient([
-            (EFTS_SEARCH_URL, MockResponse(json_data=empty)),
+            (_SUBMISSIONS_URL_FRAGMENT, MockResponse(json_data=_SUBMISSIONS_RESPONSE)),
         ])
-        hits = await _search_efts("FAKE", client, fetch_size=10)
-        assert hits == []
+        filings = await _fetch_submissions(_SUBMISSIONS_CIK, client)
+        f = filings[0]
+        assert f["accessionNumber"] == "0001045810-24-000123"
+        assert f["filingDate"] == "2024-05-22"
+        assert f["form"] == "8-K"
+        assert f["items"] == "2.02,9.01"
+        assert f["companyName"] == "NVIDIA Corp"
+
+    async def test_returns_empty_list_when_no_filings(self):
+        empty = {"cik": "1045810", "name": "NVIDIA Corp", "filings": {"recent": {}, "files": []}}
+        client = MockAsyncClient([
+            (_SUBMISSIONS_URL_FRAGMENT, MockResponse(json_data=empty)),
+        ])
+        filings = await _fetch_submissions(_SUBMISSIONS_CIK, client)
+        assert filings == []
+
+    async def test_follows_paginated_files(self):
+        paginated_page = {
+            "accessionNumber": ["0001045810-22-000789"],
+            "filingDate": ["2022-02-15"],
+            "form": ["8-K"],
+            "primaryDocument": ["d789d8k.htm"],
+            "items": ["2.02,9.01"],
+        }
+        response_with_pages = {
+            "cik": "1045810",
+            "name": "NVIDIA Corp",
+            "filings": {
+                "recent": _SUBMISSIONS_RESPONSE["filings"]["recent"],
+                "files": [{"name": "CIK0001045810-submissions-001.json"}],
+            },
+        }
+        client = MockAsyncClient([
+            (_SUBMISSIONS_URL_FRAGMENT, MockResponse(json_data=response_with_pages)),
+            ("submissions-001.json", MockResponse(json_data=paginated_page)),
+        ])
+        filings = await _fetch_submissions(_SUBMISSIONS_CIK, client)
+        assert len(filings) == 3
+        assert any(f["accessionNumber"] == "0001045810-22-000789" for f in filings)
 
     async def test_raises_on_http_error(self):
         client = MockAsyncClient([
-            (EFTS_SEARCH_URL, MockResponse(status_code=500)),
+            (_SUBMISSIONS_URL_FRAGMENT, MockResponse(status_code=500)),
         ])
         with pytest.raises(httpx.HTTPStatusError):
-            await _search_efts("NVDA", client, fetch_size=10)
-
-    async def test_passes_ticker_as_entity_param(self):
-        client = MockAsyncClient([
-            (EFTS_SEARCH_URL, MockResponse(json_data=_EFTS_RESPONSE)),
-        ])
-        await _search_efts("NVDA", client, fetch_size=5)
-        _, kwargs = client.calls[0]
-        assert kwargs["params"]["entity"] == "NVDA"
-        assert kwargs["params"]["forms"] == "8-K"
+            await _fetch_submissions(_SUBMISSIONS_CIK, client)
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +305,14 @@ _ACC_NODASH = "000104581024000123"
 class TestGetDocumentUrl:
     def _make_index_url(self):
         return f"{EDGAR_ARCHIVES}/1045810/{_ACC_NODASH}/{_ACC}-index.json"
+
+    async def test_prefers_ex992_over_ex991(self):
+        client = MockAsyncClient([
+            (self._make_index_url(), MockResponse(json_data=_FILING_INDEX_WITH_EX992)),
+        ])
+        url = await _get_document_url(_CIK, _ACC, client)
+        assert url is not None
+        assert "ex992.htm" in url
 
     async def test_prefers_ex99_exhibit(self):
         client = MockAsyncClient([
@@ -371,7 +435,7 @@ class TestFetchTranscripts:
     async def test_returns_sorted_transcripts(self):
         cm, _ = _build_client_cm([
             (COMPANY_TICKERS_URL, MockResponse(json_data=_COMPANY_TICKERS)),
-            (EFTS_SEARCH_URL, MockResponse(json_data=_EFTS_RESPONSE)),
+            (_SUBMISSIONS_URL_FRAGMENT, MockResponse(json_data=_SUBMISSIONS_RESPONSE)),
             (_INDEX_URL_FRAGMENT, MockResponse(json_data=_FILING_INDEX_WITH_EXHIBIT)),
             (_DOC_URL_FRAGMENT, MockResponse(text=_TRANSCRIPT_HTML, content_type="text/html")),
         ])
@@ -387,7 +451,7 @@ class TestFetchTranscripts:
     async def test_result_fields_are_populated(self):
         cm, _ = _build_client_cm([
             (COMPANY_TICKERS_URL, MockResponse(json_data=_COMPANY_TICKERS)),
-            (EFTS_SEARCH_URL, MockResponse(json_data=_EFTS_RESPONSE)),
+            (_SUBMISSIONS_URL_FRAGMENT, MockResponse(json_data=_SUBMISSIONS_RESPONSE)),
             (_INDEX_URL_FRAGMENT, MockResponse(json_data=_FILING_INDEX_WITH_EXHIBIT)),
             (_DOC_URL_FRAGMENT, MockResponse(text=_TRANSCRIPT_HTML, content_type="text/html")),
         ])
@@ -410,22 +474,45 @@ class TestFetchTranscripts:
             with pytest.raises(ValueError, match="ZZZZ"):
                 await fetch_transcripts("ZZZZ")
 
-    async def test_returns_empty_list_when_no_efts_hits(self):
-        empty_efts = {"hits": {"total": {"value": 0}, "hits": []}}
+    async def test_returns_empty_list_when_no_submissions_hits(self):
+        empty_submissions = {
+            "cik": "1045810",
+            "name": "NVIDIA Corp",
+            "filings": {
+                "recent": {
+                    "accessionNumber": [],
+                    "filingDate": [],
+                    "form": [],
+                    "primaryDocument": [],
+                    "items": [],
+                },
+                "files": [],
+            },
+        }
         cm, _ = _build_client_cm([
             (COMPANY_TICKERS_URL, MockResponse(json_data=_COMPANY_TICKERS)),
-            (EFTS_SEARCH_URL, MockResponse(json_data=empty_efts)),
+            (_SUBMISSIONS_URL_FRAGMENT, MockResponse(json_data=empty_submissions)),
+        ])
+        with patch("backend.data.edgar.httpx.AsyncClient", return_value=cm):
+            results = await fetch_transcripts("NVDA")
+        assert results == []
+
+    async def test_returns_empty_list_when_no_202_filings(self):
+        """8-K filings without item 2.02 should be filtered out."""
+        cm, _ = _build_client_cm([
+            (COMPANY_TICKERS_URL, MockResponse(json_data=_COMPANY_TICKERS)),
+            (_SUBMISSIONS_URL_FRAGMENT, MockResponse(json_data=_SUBMISSIONS_RESPONSE_NO_202)),
         ])
         with patch("backend.data.edgar.httpx.AsyncClient", return_value=cm):
             results = await fetch_transcripts("NVDA")
         assert results == []
 
     async def test_skips_hits_with_unusable_documents(self):
-        """Hits whose documents are too short should be silently skipped."""
+        """Filings whose documents are too short should be silently skipped."""
         short_html = "<html><body><p>Too short to be a transcript.</p></body></html>"
         cm, _ = _build_client_cm([
             (COMPANY_TICKERS_URL, MockResponse(json_data=_COMPANY_TICKERS)),
-            (EFTS_SEARCH_URL, MockResponse(json_data=_EFTS_RESPONSE)),
+            (_SUBMISSIONS_URL_FRAGMENT, MockResponse(json_data=_SUBMISSIONS_RESPONSE)),
             (_INDEX_URL_FRAGMENT, MockResponse(json_data=_FILING_INDEX_WITH_EXHIBIT)),
             (_DOC_URL_FRAGMENT, MockResponse(text=short_html, content_type="text/html")),
         ])
@@ -438,7 +525,7 @@ class TestFetchTranscripts:
         # Give the mock enough routes: the second hit reuses the same fragments
         cm, _ = _build_client_cm([
             (COMPANY_TICKERS_URL, MockResponse(json_data=_COMPANY_TICKERS)),
-            (EFTS_SEARCH_URL, MockResponse(json_data=_EFTS_RESPONSE)),
+            (_SUBMISSIONS_URL_FRAGMENT, MockResponse(json_data=_SUBMISSIONS_RESPONSE)),
             (_INDEX_URL_FRAGMENT, MockResponse(json_data=_FILING_INDEX_WITH_EXHIBIT)),
             (_DOC_URL_FRAGMENT, MockResponse(text=_TRANSCRIPT_HTML, content_type="text/html")),
         ])
@@ -525,18 +612,18 @@ class TestRetryingGet:
         backoff_calls = [c.args[0] for c in _no_sleep.call_args_list if c.args[0] >= _BASE_RETRY_DELAY]
         assert backoff_calls == []
 
-    async def test_search_efts_retries_on_429(self, _no_sleep):
-        """End-to-end: _search_efts recovers after a 429 from EFTS."""
+    async def test_fetch_submissions_retries_on_429(self, _no_sleep):
+        """End-to-end: _fetch_submissions recovers after a 429."""
         client = MockAsyncClient([
-            (EFTS_SEARCH_URL, [
+            (_SUBMISSIONS_URL_FRAGMENT, [
                 MockResponse(status_code=429),
-                MockResponse(json_data=_EFTS_RESPONSE),
+                MockResponse(json_data=_SUBMISSIONS_RESPONSE),
             ]),
         ])
-        hits = await _search_efts("NVDA", client, fetch_size=10)
-        assert len(hits) == 2
-        efts_calls = [url for url, _ in client.calls if EFTS_SEARCH_URL in url]
-        assert len(efts_calls) == 2
+        filings = await _fetch_submissions(_SUBMISSIONS_CIK, client)
+        assert len(filings) == 2
+        submissions_calls = [url for url, _ in client.calls if _SUBMISSIONS_URL_FRAGMENT in url]
+        assert len(submissions_calls) == 2
 
     async def test_fetch_document_text_retries_on_503(self, _no_sleep):
         """End-to-end: _fetch_document_text recovers after a 503."""

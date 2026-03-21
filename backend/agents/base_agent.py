@@ -155,9 +155,11 @@ class BaseAgent(ABC):
         from openai import AsyncOpenAI
 
         client = AsyncOpenAI(api_key=self._settings.openai_api_key)
+
+        # OpenAI models vary on whether they accept a custom temperature — omit
+        # it entirely and rely on the API default (1) to avoid BadRequestError.
         response = await client.chat.completions.create(
             model=model,
-            temperature=self._settings.temperature,
             messages=[{"role": "user", "content": prompt}],
         )
         return response.choices[0].message.content

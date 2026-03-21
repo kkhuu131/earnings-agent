@@ -314,9 +314,9 @@ This is the sequence to follow. Do not skip ahead.
 
 ## Current Priority
 
-**NEXT: Step 11 — Frontend**
+**NEXT: Step 12 — Polish**
 
-Steps 1–10 are complete and tested:
+Steps 1–11 are complete and tested:
 
 **Step 1 — Data pipeline** ✅
 - `backend/data/edgar.py` — SEC EDGAR transcript fetcher with retry/backoff
@@ -419,5 +419,18 @@ Steps 1–10 are complete and tested:
   - Weight normalisation and equal-weight fallback
   - Upsert: new agents inserted, existing rows mutated
   - Runner integration: called after success, skipped when no predictions processed
+
+**Step 11 — Frontend** ✅
+- `frontend/` — Next.js 16 + TypeScript + Tailwind (App Router), scaffolded with `create-next-app`
+- `frontend/lib/types.ts` — TypeScript interfaces for all API responses: `AnalyzeResponse`, `PredictionRecord`, `BacktestResponse`, `WeightedSignal`, `DebateRound`, etc.
+- `frontend/lib/api.ts` — typed fetch wrapper reading `NEXT_PUBLIC_API_URL`; exports `analyze()`, `getPredictions()`, `runBacktest()`
+- `frontend/app/page.tsx` — ticker input + transcript textarea, calls `POST /analyze`, renders `PredictionResult` and toggleable `AgentDebate`
+- `frontend/app/history/page.tsx` — calls `GET /predictions` with optional ticker filter; expandable rows show reasoning and full debate transcript
+- `frontend/app/backtest/page.tsx` — ticker tag editor + date range picker, calls `POST /backtest`, renders `ReputationChart`
+- `frontend/components/PredictionResult.tsx` — direction badge (up/down/neutral), confidence bar, per-agent weighted signal grid
+- `frontend/components/AgentDebate.tsx` — bull vs bear argument cards in side-by-side rounds layout with rebuttal lists
+- `frontend/components/ReputationChart.tsx` — KPI cards (total/correct/accuracy) + Recharts bar chart + per-ticker accuracy table
+- `backend/main.py` — added `CORSMiddleware` allowing `localhost:3000` so browser fetch calls aren't blocked
+- Design: dark slate dashboard theme, Fira Code headings, Fira Sans body, blue/amber accents
 
 Update this section at the start of every Claude Code session.

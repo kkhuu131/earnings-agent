@@ -62,4 +62,5 @@ async def analyze(body: AnalyzeRequest) -> AnalyzeResponse:
         confidence=float(result.get("confidence", 0.0)),
         reasoning=result.get("reasoning", ""),
         weighted_signals=result.get("weighted_signals", {}),
+        debate_transcript=result.get("debate_transcript"),
     )

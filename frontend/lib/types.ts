@@ -16,12 +16,12 @@ export interface AnalyzeResponse {
   confidence: number;
   reasoning: string;
   weighted_signals: Record<string, WeightedSignal>;
+  debate_transcript: DebateRound[] | null;
 }
 
 export interface WeightedSignal {
   signal: "bullish" | "bearish" | "neutral";
-  confidence: number;
-  weight?: number;
+  weight: number;
 }
 
 // ---------------------------------------------------------------------------

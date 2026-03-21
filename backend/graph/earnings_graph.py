@@ -216,4 +216,11 @@ async def run_pipeline(
         "prediction": None,
     }
     final_state = await compiled.ainvoke(initial_state)
-    return final_state["prediction"]
+    prediction = final_state["prediction"]
+    prediction["debate_transcript"] = final_state.get("debate", [])
+    prediction["agent_reports"] = {
+        "fundamentals": final_state.get("fundamentals", {}),
+        "sentiment": final_state.get("sentiment", {}),
+        "technical": final_state.get("technical", {}),
+    }
+    return prediction

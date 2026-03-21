@@ -146,8 +146,7 @@ export default function AnalyzePage() {
         <div className="space-y-4">
           <PredictionResult result={result} />
 
-          {/* Debate toggle — the AnalyzeResponse doesn't carry debate_transcript
-              but we keep this section for when it does in future */}
+          {/* Debate toggle */}
           <button
             type="button"
             onClick={() => setShowDebate((v) => !v)}
@@ -158,7 +157,7 @@ export default function AnalyzePage() {
             {showDebate ? "Hide" : "Show"} debate transcript
           </button>
 
-          {showDebate && <AgentDebate rounds={[]} />}
+          {showDebate && <AgentDebate rounds={result.debate_transcript ?? []} />}
         </div>
       )}
     </div>

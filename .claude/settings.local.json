@@ -8,7 +8,8 @@
       "Bash(python -m pytest tests/db/ -v)",
       "Bash(python -m pytest tests/ -q)",
       "Bash(python -m pytest tests/agents/ -v)",
-      "Bash(python -m pytest tests/agents/test_sentiment_analyst.py tests/agents/test_technical_analyst.py -v)"
+      "Bash(python -m pytest tests/agents/test_sentiment_analyst.py tests/agents/test_technical_analyst.py -v)",
+      "Bash(python -m pytest tests/agents/test_bull_researcher.py tests/agents/test_bear_researcher.py -v)"
     ]
   }
 }

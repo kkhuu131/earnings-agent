@@ -314,9 +314,9 @@ This is the sequence to follow. Do not skip ahead.
 
 ## Current Priority
 
-**NEXT: Step 8 — FastAPI routes**
+**NEXT: Step 9 — Backtesting runner**
 
-Steps 1–7 are complete and tested:
+Steps 1–8 are complete and tested:
 
 **Step 1 — Data pipeline** ✅
 - `backend/data/edgar.py` — SEC EDGAR transcript fetcher with retry/backoff
@@ -379,12 +379,25 @@ Steps 1–7 are complete and tested:
   - `run_pipeline(transcript, price_data, settings?) -> dict` async entry point compiles and invokes the graph
 - `tests/graph/test_earnings_graph.py` — 28 tests, all passing
 
-Build FastAPI routes next:
+**Step 8 — FastAPI routes** ✅
+- `backend/api/schemas.py` — Pydantic request/response models:
+  - `AnalyzeRequest`: ticker, transcript, price_data
+  - `AnalyzeResponse`: prediction_id (UUID), ticker, run_date, direction, confidence, reasoning, weighted_signals
+  - `PredictionRecord`: full row shape with `from_attributes=True` for ORM serialisation
+- `backend/api/routes/analyze.py` — `POST /analyze`: calls `run_pipeline`, persists `Prediction` record via `get_session`, returns `AnalyzeResponse` with stored `prediction_id`
+- `backend/api/routes/predictions.py` — `GET /predictions`: optional `ticker` and `limit` (default 50) query params; returns `list[PredictionRecord]` ordered by `run_date` desc
+- `backend/main.py` — FastAPI app with lifespan placeholder; both routers mounted under `/api/v1`
+- `tests/api/test_analyze.py` + `tests/api/test_predictions.py` — 37 tests, all passing
 
-1. `backend/api/schemas.py` — Pydantic request/response models for `/analyze`, `/backtest`, `/predictions`.
-2. `backend/api/routes/analyze.py` — `POST /analyze` that calls `run_pipeline` and stores result in DB.
-3. `backend/api/routes/predictions.py` — `GET /predictions` that returns stored prediction history.
-4. `backend/main.py` — FastAPI app with routers mounted.
-5. Unit tests in `tests/api/` — mock `run_pipeline` and DB session; verify status codes, response shapes.
+Build the backtesting runner next:
+
+1. `backend/backtest/runner.py` — `run_backtest(tickers, start_date, end_date)` async function:
+   - Fetches transcripts from `transcripts` table for the given tickers and date range
+   - For each transcript, fetches the corresponding `PriceSnapshot` (30d direction pre-computed)
+   - Calls `run_pipeline(transcript, price_data)` for each
+   - Stores the result as a `Prediction` row with `actual_direction` and `was_correct` filled in
+2. `backend/api/routes/backtest.py` — `POST /backtest` route that accepts `BacktestRequest` and calls `runner.run_backtest`; mount in `main.py`
+3. `backend/api/schemas.py` — add `BacktestRequest` and `BacktestResponse` schemas
+4. Unit tests in `tests/backtest/test_runner.py` — mock `run_pipeline`, DB session, and data fetchers; verify correct/incorrect labelling logic and DB writes
 
 Update this section at the start of every Claude Code session.

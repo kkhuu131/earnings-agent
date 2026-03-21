@@ -314,19 +314,37 @@ This is the sequence to follow. Do not skip ahead.
 
 ## Current Priority
 
-**STARTING NOW: Step 1 — Data pipeline**
+**STARTING NOW: Step 3 — Single Agent (FundamentalsAnalyst)**
 
-Build `backend/data/edgar.py` first:
-- Takes a ticker symbol (e.g. "NVDA")
-- Fetches the 10 most recent earnings call transcripts from SEC EDGAR Full-Text Search API
-- Returns clean text with metadata (ticker, date, accession number)
-- Handles rate limiting and errors gracefully
+Steps 1 and 2 are complete and tested:
 
-SEC EDGAR Full-Text Search API endpoint: `https://efts.sec.gov/LATEST/search-index?q=%22earnings+call%22&dateRange=custom&startdt=2023-01-01&enddt=2024-01-01&forms=8-K`
+**Step 1 — Data pipeline** ✅
+- `backend/data/edgar.py` — SEC EDGAR transcript fetcher with retry/backoff
+- `backend/data/prices.py` — yfinance price fetcher with 30d direction
+- `tests/data/test_edgar.py` + `tests/data/test_prices.py` — 75 tests, all passing
 
-Then build `backend/data/prices.py`:
-- Takes a ticker and a date
-- Returns closing price on that date and 30 days later
-- Pre-computes `actual_direction` ("up"/"down"/"neutral" with a 2% threshold)
+**Step 2 — Database** ✅
+- `backend/config.py` — Pydantic BaseSettings loading all env vars
+- `backend/db/models.py` — SQLAlchemy 2.x async ORM: Transcript, PriceSnapshot, AgentReputation, Prediction
+- `backend/db/session.py` — async engine (asyncpg) + `get_session()` context manager with commit/rollback/close
+- `backend/db/init_db.py` — `create_all()` bootstrap script (no Alembic yet)
+- `tests/db/test_models.py` + `tests/db/test_session.py` — 34 tests, all passing
+
+Build the first agent next:
+
+1. `backend/agents/base_agent.py` — abstract `BaseAgent` with `_call_llm()` that
+   always returns parsed JSON (raises on non-JSON). Async. Uses `LLMProvider`
+   abstraction driven by `settings.llm_provider`.
+
+2. `backend/agents/fundamentals_analyst.py` — concrete `FundamentalsAnalyst`
+   inheriting `BaseAgent`. Reads revenue, EPS, margins, guidance from a
+   transcript string and returns:
+   `{ signal: "bullish|bearish|neutral", key_points: [], confidence: 0-1 }`
+
+3. Wire to a real transcript: call `fetch_transcripts("AAPL", limit=1)` and
+   pass the text through `FundamentalsAnalyst.analyze()` to prove end-to-end.
+
+4. Unit tests in `tests/agents/` — mock the LLM call, verify JSON parsing and
+   error handling; test that a non-JSON LLM response raises cleanly.
 
 Update this section at the start of every Claude Code session.

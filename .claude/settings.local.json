@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python -c \":*)",
+      "Bash(grep -v \"^$\")",
+      "Bash(python -m pytest tests/ -v)"
+    ]
+  }
+}

@@ -251,8 +251,8 @@ GOOGLE_API_KEY=
 
 # Supabase
 SUPABASE_URL=
-SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_PUBLISHABLE_KEY=             # formerly anon key — safe for frontend use
+SUPABASE_SECRET_KEY=                  # formerly service_role key — backend only, never expose
 DATABASE_URL=                          # postgresql://... (from Supabase connection string)
 
 # App

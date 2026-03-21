@@ -21,6 +21,7 @@ from typing import TypedDict
 
 from sqlalchemy import select
 
+from backend.backtest.reputation import update_reputation
 from backend.db.models import Prediction, PriceSnapshot, Transcript
 from backend.db.session import get_session
 from backend.graph.earnings_graph import run_pipeline
@@ -186,6 +187,9 @@ async def run_backtest(
         )
 
     overall_accuracy = correct / total if total > 0 else 0.0
+
+    if total > 0:
+        await update_reputation()
 
     return BacktestSummary(
         total=total,

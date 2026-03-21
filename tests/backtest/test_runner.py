@@ -27,6 +27,13 @@ import pytest
 
 from backend.backtest.runner import run_backtest
 
+
+@pytest.fixture(autouse=True)
+def mock_update_reputation():
+    """Suppress update_reputation in all runner tests — it has its own test file."""
+    with patch("backend.backtest.runner.update_reputation", new=AsyncMock()):
+        yield
+
 # ---------------------------------------------------------------------------
 # Test data helpers
 # ---------------------------------------------------------------------------

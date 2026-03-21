@@ -314,9 +314,9 @@ This is the sequence to follow. Do not skip ahead.
 
 ## Current Priority
 
-**NEXT: Step 10 — Reputation system**
+**NEXT: Step 11 — Frontend**
 
-Steps 1–9 are complete and tested:
+Steps 1–10 are complete and tested:
 
 **Step 1 — Data pipeline** ✅
 - `backend/data/edgar.py` — SEC EDGAR transcript fetcher with retry/backoff
@@ -397,20 +397,27 @@ Steps 1–9 are complete and tested:
   - Persists Prediction rows with `actual_direction` and `was_correct` filled in
   - Skips gracefully on missing snapshot, empty/None text, or pipeline exception
   - Returns `BacktestSummary`: `{ total, correct, accuracy, per_ticker }`
+  - Calls `update_reputation()` at end of run when at least one prediction was processed
 - `backend/api/schemas.py` — added `BacktestRequest` (tickers, start_date, end_date), `TickerSummary`, `BacktestResponse`
 - `backend/api/routes/backtest.py` — `POST /backtest`: calls `run_backtest`, returns `BacktestResponse`
 - `backend/main.py` — backtest router mounted under `/api/v1`
 - `tests/backtest/test_runner.py` + `tests/api/test_backtest.py` — 45 tests, all passing
 
-Build the reputation system next:
-
-1. `backend/backtest/reputation.py` — `update_reputation(session)` async function:
-   - Reads all `Prediction` rows where `was_correct IS NOT NULL`
-   - Groups by the agent signals in `weighted_signals` JSONB to compute per-agent accuracy
-   - Upserts `AgentReputation` rows: `correct_predictions`, `total_predictions`, `accuracy`
-   - Recomputes normalised `weight` for each agent: `weight = accuracy / sum(all accuracies)`
-   - If all accuracies are 0, falls back to equal weights
-2. Hook reputation update into the backtest runner — call `update_reputation` at the end of `run_backtest`
-3. Unit tests in `tests/backtest/test_reputation.py` — mock DB session; verify upsert logic, weight normalisation, and equal-weight fallback
+**Step 10 — Reputation system** ✅
+- `backend/backtest/reputation.py` — `update_reputation()` async function (opens its own session):
+  - Reads all `Prediction` rows where `was_correct IS NOT NULL`
+  - Maps each agent's `weighted_signals` signal (bullish/bearish/neutral) to a direction (up/down/neutral)
+  - Tallies per-agent `correct_predictions` and `total_predictions` by comparing to `actual_direction`
+  - Upserts `AgentReputation` rows: mutates existing rows in-place, inserts new rows via `session.add`
+  - Recomputes normalised `weight`: `weight = accuracy / sum(all accuracies)`
+  - Falls back to equal weights when all accuracies are zero
+  - Internal `_update_reputation_with_session(session)` accepts a session directly (used in tests)
+- `tests/backtest/test_reputation.py` — 19 tests, all passing:
+  - No-op when no resolved predictions exist
+  - Accuracy computation (all correct, none correct, partial)
+  - Signal mapping: bullish→up, bearish→down, neutral→neutral
+  - Weight normalisation and equal-weight fallback
+  - Upsert: new agents inserted, existing rows mutated
+  - Runner integration: called after success, skipped when no predictions processed
 
 Update this section at the start of every Claude Code session.

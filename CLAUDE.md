@@ -314,9 +314,9 @@ This is the sequence to follow. Do not skip ahead.
 
 ## Current Priority
 
-**STARTING NOW: Step 3 — Single Agent (FundamentalsAnalyst)**
+**NEXT: Step 4 — All Analysts (SentimentAnalyst + TechnicalAnalyst)**
 
-Steps 1 and 2 are complete and tested:
+Steps 1–3 are complete and tested:
 
 **Step 1 — Data pipeline** ✅
 - `backend/data/edgar.py` — SEC EDGAR transcript fetcher with retry/backoff
@@ -330,21 +330,26 @@ Steps 1 and 2 are complete and tested:
 - `backend/db/init_db.py` — `create_all()` bootstrap script (no Alembic yet)
 - `tests/db/test_models.py` + `tests/db/test_session.py` — 34 tests, all passing
 
-Build the first agent next:
+**Step 3 — Single Agent (FundamentalsAnalyst)** ✅
+- `backend/agents/base_agent.py` — abstract `BaseAgent` with async `_call_llm()`:
+  - Routes to anthropic / openai / google / ollama via `settings.llm_provider`
+  - `use_deep_model` flag selects between `settings.quick_model` and `settings.deep_model`
+  - `_parse_json()` strips markdown fences, raises `ValueError` on non-JSON or non-dict
+- `backend/agents/fundamentals_analyst.py` — concrete `FundamentalsAnalyst`:
+  - `analyze({"transcript": str}) -> {"signal", "key_points", "confidence"}`
+  - Uses quick model; prompt enforces raw JSON only output
+- `tests/agents/test_base_agent.py` + `tests/agents/test_fundamentals_analyst.py` — 39 tests, all passing
 
-1. `backend/agents/base_agent.py` — abstract `BaseAgent` with `_call_llm()` that
-   always returns parsed JSON (raises on non-JSON). Async. Uses `LLMProvider`
-   abstraction driven by `settings.llm_provider`.
+Build the remaining analyst agents next:
 
-2. `backend/agents/fundamentals_analyst.py` — concrete `FundamentalsAnalyst`
-   inheriting `BaseAgent`. Reads revenue, EPS, margins, guidance from a
-   transcript string and returns:
-   `{ signal: "bullish|bearish|neutral", key_points: [], confidence: 0-1 }`
+1. `backend/agents/sentiment_analyst.py` — concrete `SentimentAnalyst` inheriting `BaseAgent`.
+   Reads management tone, language hedging, certainty, Q&A defensiveness.
+   Returns: `{ signal: "bullish|bearish|neutral", key_points: [], confidence: 0-1 }`
 
-3. Wire to a real transcript: call `fetch_transcripts("AAPL", limit=1)` and
-   pass the text through `FundamentalsAnalyst.analyze()` to prove end-to-end.
+2. `backend/agents/technical_analyst.py` — concrete `TechnicalAnalyst` inheriting `BaseAgent`.
+   Reads pre-earnings price action from a `price_data` dict (5d/30d returns, RSI, volume trend).
+   Returns: `{ signal: "bullish|bearish|neutral", key_points: [], confidence: 0-1 }`
 
-4. Unit tests in `tests/agents/` — mock the LLM call, verify JSON parsing and
-   error handling; test that a non-JSON LLM response raises cleanly.
+3. Unit tests in `tests/agents/` for each — same mock pattern as FundamentalsAnalyst tests.
 
 Update this section at the start of every Claude Code session.

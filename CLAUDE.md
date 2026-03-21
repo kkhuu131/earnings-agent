@@ -314,9 +314,9 @@ This is the sequence to follow. Do not skip ahead.
 
 ## Current Priority
 
-**NEXT: Step 4 — All Analysts (SentimentAnalyst + TechnicalAnalyst)**
+**NEXT: Step 5 — Debate Loop (BullResearcher + BearResearcher)**
 
-Steps 1–3 are complete and tested:
+Steps 1–4 are complete and tested:
 
 **Step 1 — Data pipeline** ✅
 - `backend/data/edgar.py` — SEC EDGAR transcript fetcher with retry/backoff
@@ -340,16 +340,31 @@ Steps 1–3 are complete and tested:
   - Uses quick model; prompt enforces raw JSON only output
 - `tests/agents/test_base_agent.py` + `tests/agents/test_fundamentals_analyst.py` — 39 tests, all passing
 
-Build the remaining analyst agents next:
+**Step 4 — All Analysts (SentimentAnalyst + TechnicalAnalyst)** ✅
+- `backend/agents/sentiment_analyst.py` — concrete `SentimentAnalyst` inheriting `BaseAgent`:
+  - `analyze({"transcript": str}) -> {"signal", "key_points", "confidence"}`
+  - Analyzes management tone, language hedging, certainty, Q&A defensiveness
+  - Uses quick model; prompt enforces raw JSON only output
+- `backend/agents/technical_analyst.py` — concrete `TechnicalAnalyst` inheriting `BaseAgent`:
+  - `analyze({"price_data": dict}) -> {"signal", "key_points", "confidence"}`
+  - Reads 5d/30d returns, RSI, volume trend, implied move vs historical; formats dict as text in prompt
+  - Uses quick model; prompt enforces raw JSON only output
+- `tests/agents/test_sentiment_analyst.py` + `tests/agents/test_technical_analyst.py` — 35 tests, all passing
 
-1. `backend/agents/sentiment_analyst.py` — concrete `SentimentAnalyst` inheriting `BaseAgent`.
-   Reads management tone, language hedging, certainty, Q&A defensiveness.
-   Returns: `{ signal: "bullish|bearish|neutral", key_points: [], confidence: 0-1 }`
+Build the debate researchers next:
 
-2. `backend/agents/technical_analyst.py` — concrete `TechnicalAnalyst` inheriting `BaseAgent`.
-   Reads pre-earnings price action from a `price_data` dict (5d/30d returns, RSI, volume trend).
-   Returns: `{ signal: "bullish|bearish|neutral", key_points: [], confidence: 0-1 }`
+1. `backend/agents/bull_researcher.py` — concrete `BullResearcher` inheriting `BaseAgent`.
+   Receives all three analyst reports. Synthesizes bullish case, challenges bearish assumptions.
+   Engages in N rounds of debate with `BearResearcher` (configurable via `settings.max_debate_rounds`).
+   Returns: `{ argument: str, confidence: 0-1, rebuttals: [] }`
 
-3. Unit tests in `tests/agents/` for each — same mock pattern as FundamentalsAnalyst tests.
+2. `backend/agents/bear_researcher.py` — concrete `BearResearcher` inheriting `BaseAgent`.
+   Receives all three analyst reports. Synthesizes bearish case, challenges bullish assumptions.
+   Returns: `{ argument: str, confidence: 0-1, rebuttals: [] }`
+
+3. Debate loop orchestration: the two researchers exchange rebuttals for `max_debate_rounds` rounds.
+   Each round feeds the prior response as context to the opposing researcher.
+
+4. Unit tests in `tests/agents/` for each — same mock pattern as the analyst tests.
 
 Update this section at the start of every Claude Code session.

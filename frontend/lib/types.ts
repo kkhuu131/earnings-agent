@@ -83,6 +83,31 @@ export interface IngestResponse {
 }
 
 // ---------------------------------------------------------------------------
+// GET /transcripts  +  PATCH /transcripts/{id}/date
+// ---------------------------------------------------------------------------
+
+export interface TranscriptRecord {
+  id: string;
+  ticker: string;
+  fiscal_quarter: string | null;
+  filing_date: string | null;
+  word_count: number | null;
+  price_snapshot_found: boolean;
+  actual_direction: "up" | "down" | "neutral" | null;
+}
+
+export interface UpdateDateRequest {
+  filing_date: string; // ISO date: "2025-01-30"
+}
+
+export interface UpdateDateResponse {
+  transcript_id: string;
+  filing_date: string;
+  price_snapshot_found: boolean;
+  actual_direction: "up" | "down" | "neutral" | null;
+}
+
+// ---------------------------------------------------------------------------
 // POST /backtest
 // ---------------------------------------------------------------------------
 

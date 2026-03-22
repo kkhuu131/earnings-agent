@@ -114,3 +114,37 @@ class IngestResponse(BaseModel):
     word_count: int
     price_snapshot_found: bool
     actual_direction: Optional[str] = None  # "up" | "down" | "neutral" | None
+
+
+# ---------------------------------------------------------------------------
+# GET /transcripts  +  PATCH /transcripts/{id}/date
+# ---------------------------------------------------------------------------
+
+
+class TranscriptRecord(BaseModel):
+    """Summary of an ingested transcript row, including price snapshot status."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    ticker: str
+    fiscal_quarter: Optional[str] = None
+    filing_date: Optional[date] = None
+    word_count: Optional[int] = None      # computed from transcript_text length
+    price_snapshot_found: bool = False
+    actual_direction: Optional[str] = None
+
+
+class UpdateDateRequest(BaseModel):
+    """Payload for updating a transcript's filing date and refreshing its price snapshot."""
+
+    filing_date: date
+
+
+class UpdateDateResponse(BaseModel):
+    """Returned after a successful date update and price snapshot refresh."""
+
+    transcript_id: uuid.UUID
+    filing_date: date
+    price_snapshot_found: bool
+    actual_direction: Optional[str] = None

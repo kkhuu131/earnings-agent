@@ -6,6 +6,9 @@ import type {
   IngestRequest,
   IngestResponse,
   PredictionRecord,
+  TranscriptRecord,
+  UpdateDateRequest,
+  UpdateDateResponse,
 } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
@@ -46,6 +49,20 @@ export function ingest(payload: IngestRequest): Promise<IngestResponse> {
 export function runBacktest(payload: BacktestRequest): Promise<BacktestResponse> {
   return request<BacktestResponse>("/backtest", {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getTranscripts(): Promise<TranscriptRecord[]> {
+  return request<TranscriptRecord[]>("/transcripts");
+}
+
+export function updateTranscriptDate(
+  id: string,
+  payload: UpdateDateRequest,
+): Promise<UpdateDateResponse> {
+  return request<UpdateDateResponse>(`/transcripts/${id}/date`, {
+    method: "PATCH",
     body: JSON.stringify(payload),
   });
 }

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { Upload, Loader2, AlertCircle, CheckCircle2, XCircle } from "lucide-react";
-import { ingest } from "@/lib/api";
-import type { IngestResponse } from "@/lib/types";
+import { useState, useEffect, useCallback } from "react";
+import { Upload, Loader2, AlertCircle, CheckCircle2, XCircle, RefreshCw, Calendar } from "lucide-react";
+import { ingest, getTranscripts, updateTranscriptDate } from "@/lib/api";
+import type { IngestResponse, TranscriptRecord } from "@/lib/types";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const START_YEAR = 2022;
@@ -26,7 +26,29 @@ export default function IngestPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<IngestResponse | null>(null);
 
+  const [transcripts, setTranscripts] = useState<TranscriptRecord[]>([]);
+  const [loadingTranscripts, setLoadingTranscripts] = useState(true);
+  // editingId → new date string being typed
+  const [editingDates, setEditingDates] = useState<Record<string, string>>({});
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [refreshErrors, setRefreshErrors] = useState<Record<string, string>>({});
+
   const wordCount = transcriptText.trim() ? transcriptText.trim().split(/\s+/).length : 0;
+
+  const loadTranscripts = useCallback(async () => {
+    try {
+      const data = await getTranscripts();
+      setTranscripts(data);
+    } catch {
+      // non-fatal — list just won't show
+    } finally {
+      setLoadingTranscripts(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTranscripts();
+  }, [loadTranscripts]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,6 +64,8 @@ export default function IngestPage() {
         transcript_text: transcriptText.trim(),
       });
       setResult(res);
+      // Refresh the list
+      loadTranscripts();
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred.");
     } finally {
@@ -58,8 +82,34 @@ export default function IngestPage() {
     setError(null);
   }
 
+  async function handleRefreshDate(id: string) {
+    const newDate = editingDates[id];
+    if (!newDate) return;
+    setRefreshingId(id);
+    setRefreshErrors((prev) => { const next = { ...prev }; delete next[id]; return next; });
+    try {
+      const res = await updateTranscriptDate(id, { filing_date: newDate });
+      setTranscripts((prev) =>
+        prev.map((t) =>
+          t.id === id
+            ? { ...t, filing_date: res.filing_date, price_snapshot_found: res.price_snapshot_found, actual_direction: res.actual_direction }
+            : t
+        )
+      );
+      // Clear the editing state on success
+      setEditingDates((prev) => { const next = { ...prev }; delete next[id]; return next; });
+    } catch (err) {
+      setRefreshErrors((prev) => ({
+        ...prev,
+        [id]: err instanceof Error ? err.message : "Refresh failed",
+      }));
+    } finally {
+      setRefreshingId(null);
+    }
+  }
+
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="max-w-3xl space-y-8">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-mono font-bold mb-1" style={{ color: "var(--color-text)" }}>
@@ -265,7 +315,7 @@ export default function IngestPage() {
                   <div className="flex items-center gap-2">
                     <XCircle size={14} style={{ color: "#F59E0B" }} />
                     <span style={{ color: "var(--color-muted)" }}>
-                      No price data found for this date — backtest accuracy won't be computed for this record
+                      No price data found — try updating the date below
                     </span>
                   </div>
                 )}
@@ -288,6 +338,155 @@ export default function IngestPage() {
           </button>
         </div>
       )}
+
+      {/* Ingested Transcripts List */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-mono font-semibold" style={{ color: "var(--color-text)" }}>
+            Ingested Transcripts
+          </h2>
+          <button
+            onClick={loadTranscripts}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono border transition-all hover:brightness-110"
+            style={{ background: "var(--color-surface)", borderColor: "var(--color-border)", color: "var(--color-muted)" }}
+          >
+            <RefreshCw size={12} />
+            Refresh
+          </button>
+        </div>
+
+        {loadingTranscripts ? (
+          <div className="flex items-center gap-2 text-sm py-4" style={{ color: "var(--color-muted)" }}>
+            <Loader2 size={14} className="animate-spin" />
+            Loading…
+          </div>
+        ) : transcripts.length === 0 ? (
+          <p className="text-sm py-4" style={{ color: "var(--color-muted)" }}>
+            No transcripts ingested yet.
+          </p>
+        ) : (
+          <div
+            className="rounded-lg border overflow-hidden"
+            style={{ borderColor: "var(--color-border)" }}
+          >
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: "var(--color-surface)", borderBottom: "1px solid var(--color-border)" }}>
+                  {["Ticker", "Quarter", "Date", "Words", "Snapshot"].map((h) => (
+                    <th
+                      key={h}
+                      className="text-left px-4 py-2.5 text-xs font-mono uppercase tracking-widest"
+                      style={{ color: "var(--color-muted)" }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                  <th className="px-4 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {transcripts.map((t, i) => {
+                  const isEditing = t.id in editingDates;
+                  const isRefreshing = refreshingId === t.id;
+                  const refreshError = refreshErrors[t.id];
+                  const editDate = editingDates[t.id] ?? t.filing_date ?? "";
+
+                  return (
+                    <tr
+                      key={t.id}
+                      style={{
+                        borderBottom: i < transcripts.length - 1 ? "1px solid var(--color-border)" : undefined,
+                        background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
+                      }}
+                    >
+                      {/* Ticker */}
+                      <td className="px-4 py-3 font-mono font-semibold" style={{ color: "var(--color-text)" }}>
+                        {t.ticker}
+                      </td>
+
+                      {/* Quarter */}
+                      <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--color-muted)" }}>
+                        {t.fiscal_quarter ?? "—"}
+                      </td>
+
+                      {/* Date — inline editor */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="date"
+                            value={editDate}
+                            onChange={(e) =>
+                              setEditingDates((prev) => ({ ...prev, [t.id]: e.target.value }))
+                            }
+                            className="rounded px-2 py-1 text-xs font-mono border outline-none focus:border-blue-500 transition-colors"
+                            style={{
+                              background: "var(--color-bg)",
+                              borderColor: isEditing ? "#3B82F6" : "var(--color-border)",
+                              color: "var(--color-text)",
+                              width: "130px",
+                            }}
+                          />
+                          {isEditing && (
+                            <button
+                              onClick={() => handleRefreshDate(t.id)}
+                              disabled={isRefreshing}
+                              title="Refresh price snapshot with this date"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-mono transition-all hover:brightness-110 disabled:opacity-50"
+                              style={{ background: "var(--color-primary)", color: "#fff" }}
+                            >
+                              {isRefreshing ? (
+                                <Loader2 size={11} className="animate-spin" />
+                              ) : (
+                                <Calendar size={11} />
+                              )}
+                              {isRefreshing ? "…" : "Update"}
+                            </button>
+                          )}
+                        </div>
+                        {refreshError && (
+                          <p className="text-xs mt-1" style={{ color: "#FCA5A5" }}>{refreshError}</p>
+                        )}
+                      </td>
+
+                      {/* Word count */}
+                      <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--color-muted)" }}>
+                        {t.word_count != null ? t.word_count.toLocaleString() : "—"}
+                      </td>
+
+                      {/* Snapshot status */}
+                      <td className="px-4 py-3">
+                        {t.price_snapshot_found ? (
+                          <div className="flex items-center gap-1.5">
+                            <CheckCircle2 size={13} style={{ color: "#10B981" }} />
+                            <span className="text-xs font-mono" style={{ color: t.actual_direction ? "var(--color-text)" : "var(--color-muted)" }}>
+                              {t.actual_direction ? t.actual_direction.toUpperCase() : "pending"}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <XCircle size={13} style={{ color: "#F59E0B" }} />
+                            <span className="text-xs font-mono" style={{ color: "#F59E0B" }}>
+                              missing
+                            </span>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Empty action column (Update button is inline with date) */}
+                      <td className="px-4 py-3" />
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="text-xs mt-2" style={{ color: "var(--color-muted)" }}>
+          Tip: if a snapshot is missing, change the date to the next trading day (most large-caps
+          report after market close) then click Update.
+        </p>
+      </div>
     </div>
   );
 }

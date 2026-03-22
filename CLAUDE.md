@@ -228,7 +228,9 @@ earnings-agent/
 │       ├── routes/
 │       │   ├── analyze.py             # POST /analyze — run on a ticker
 │       │   ├── backtest.py            # POST /backtest — run historical eval
-│       │   └── predictions.py        # GET /predictions — history
+│       │   ├── ingest.py              # POST /ingest — manually ingest a transcript
+│       │   ├── predictions.py        # GET /predictions — history
+│       │   └── transcripts.py        # GET /transcripts, PATCH /transcripts/{id}/date
 │       └── schemas.py                 # Pydantic request/response schemas
 │
 └── frontend/
@@ -318,21 +320,31 @@ This is the sequence to follow. Do not skip ahead.
 
 **Step 13 — Transcript ingestion UI** ✅
 Manual ingestion is needed because FMP deprecated free-tier transcript API access on August 31 2025,
-and SEC EDGAR does not carry transcripts for large-cap companies. The ingest feature lets users paste
-transcripts from any public source (e.g. Motley Fool) to seed the backtest database without requiring
-a paid API subscription.
+and SEC EDGAR does not carry transcripts for large-cap companies (they file press releases, not call
+transcripts). The ingest feature lets users paste transcripts from any public source (e.g. Motley Fool)
+to seed the backtest database without requiring a paid API subscription.
 - `backend/api/routes/ingest.py` — `POST /ingest`: validates, inserts Transcript row, fetches PriceSnapshot via yfinance, returns summary
-- `backend/api/schemas.py` — added `IngestRequest` and `IngestResponse`
-- `frontend/app/ingest/page.tsx` — form with ticker, quarter picker, date, large textarea; live word count; success card showing price snapshot status and known 30d direction
-- Nav updated: Analyze → History → **Ingest** → Backtest
+- `backend/api/routes/transcripts.py` — `GET /transcripts`: list all ingested transcripts with price snapshot status; `PATCH /transcripts/{id}/date`: update filing_date and re-fetch price snapshot (needed when after-close earnings require next-day date)
+- `backend/api/schemas.py` — added `IngestRequest`, `IngestResponse`, `TranscriptRecord`, `UpdateDateRequest`, `UpdateDateResponse`
+- `frontend/app/ingest/page.tsx` — form with ticker, quarter picker (Q1 2022–present), date, large textarea; live word count; success card; ingested transcript table with inline date editor and snapshot refresh button
+- Nav: Analyze → History → **Ingest** → Backtest
+
+**Note on earnings date:** most large-caps (AAPL, NVDA, META, MSFT, GOOGL) report after market close.
+Use the *next trading day* as the earnings date when ingesting — the close price on announcement day
+is pre-reaction and gives a misleading 30-day direction. The Ingest page shows a tip for this.
+
+**Note on FMP:** `backend/data/fmp.py` exists but FMP deprecated transcript access for new users on
+August 31 2025. The file is kept for future use if FMP restores access or for users with legacy plans.
+EDGAR (`backend/data/edgar.py`) covers small/mid-caps that self-file transcripts, but large-caps must
+be ingested manually via the UI.
 
 **NEXT: Seed the backtest database and run end-to-end validation**
 
-Step 12 (Polish) is complete. The immediate next task is:
-1. Add `FMP_API_KEY` to `.env` (free account at financialmodelingprep.com)
-2. Run `python scripts/recon.py` to confirm FMP coverage for your target tickers
-3. Edit `TICKERS` in `scripts/populate_db.py` and run it to seed the DB
-4. Hit `POST /api/v1/backtest` to generate real accuracy data and update agent reputation weights
+The immediate next task is:
+1. Ingest 10–15 historical transcripts via the Ingest page (Motley Fool is the easiest free source)
+2. Use the next trading day after earnings announcement as the date for after-close reporters
+3. Hit `POST /api/v1/backtest` to generate real accuracy data and update agent reputation weights
+4. Verify per-agent weights diverge from 0.2 equal-weight baseline
 
 Steps 1–11 are complete and tested:
 

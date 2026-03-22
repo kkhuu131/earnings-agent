@@ -14,6 +14,7 @@ from backend.api.routes.analyze import router as analyze_router
 from backend.api.routes.backtest import router as backtest_router
 from backend.api.routes.ingest import router as ingest_router
 from backend.api.routes.predictions import router as predictions_router
+from backend.api.routes.transcripts import router as transcripts_router
 
 
 @asynccontextmanager
@@ -32,7 +33,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["Content-Type"],
 )
 
@@ -40,3 +41,4 @@ app.include_router(analyze_router, prefix="/api/v1")
 app.include_router(backtest_router, prefix="/api/v1")
 app.include_router(ingest_router, prefix="/api/v1")
 app.include_router(predictions_router, prefix="/api/v1")
+app.include_router(transcripts_router, prefix="/api/v1")

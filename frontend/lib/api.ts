@@ -1,6 +1,8 @@
 import type {
+  AgentReputationRecord,
   AnalyzeRequest,
   AnalyzeResponse,
+  BacktestProgressEvent,
   BacktestRequest,
   BacktestResponse,
   IngestRequest,
@@ -51,6 +53,48 @@ export function runBacktest(payload: BacktestRequest): Promise<BacktestResponse>
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function streamBacktest(
+  payload: BacktestRequest,
+  onEvent: (event: BacktestProgressEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`${BASE_URL}/backtest/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`API ${res.status}: ${body}`);
+  }
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      const line = part.trim();
+      if (line.startsWith("data: ")) {
+        try {
+          const event = JSON.parse(line.slice(6)) as BacktestProgressEvent;
+          onEvent(event);
+        } catch {
+          // malformed event — skip
+        }
+      }
+    }
+  }
+}
+
+export function getReputation(): Promise<AgentReputationRecord[]> {
+  return request<AgentReputationRecord[]>("/reputation");
 }
 
 export function getTranscripts(): Promise<TranscriptRecord[]> {

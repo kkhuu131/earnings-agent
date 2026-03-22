@@ -148,3 +148,20 @@ class UpdateDateResponse(BaseModel):
     filing_date: date
     price_snapshot_found: bool
     actual_direction: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# GET /reputation
+# ---------------------------------------------------------------------------
+
+
+class AgentReputationRecord(BaseModel):
+    """Single agent row from the agent_reputation table."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    agent_name: str
+    correct_predictions: int
+    total_predictions: int
+    accuracy: float
+    weight: float

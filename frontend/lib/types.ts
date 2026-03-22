@@ -129,3 +129,37 @@ export interface BacktestResponse {
   accuracy: number;
   per_ticker: Record<string, TickerSummary>;
 }
+
+// ---------------------------------------------------------------------------
+// GET /reputation
+// ---------------------------------------------------------------------------
+
+export interface AgentReputationRecord {
+  agent_name: string;
+  correct_predictions: number;
+  total_predictions: number;
+  accuracy: number;
+  weight: number;
+}
+
+// ---------------------------------------------------------------------------
+// POST /backtest/stream  (Server-Sent Events)
+// ---------------------------------------------------------------------------
+
+export type BacktestProgressEvent =
+  | { type: "start"; total: number }
+  | { type: "running"; index: number; total: number; ticker: string; date: string }
+  | {
+      type: "result";
+      index: number;
+      total: number;
+      ticker: string;
+      date: string;
+      direction: string | null;
+      actual_direction: string | null;
+      was_correct: boolean | null;
+    }
+  | { type: "skip"; index: number; total: number; ticker: string; date: string; reason: string }
+  | { type: "error"; index: number; total: number; ticker: string; date: string; message: string }
+  | { type: "done"; total: number; correct: number; accuracy: number; per_ticker: Record<string, TickerSummary> }
+  | { type: "stream_error"; message: string };

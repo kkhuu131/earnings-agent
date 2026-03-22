@@ -16,6 +16,7 @@ tests via ``unittest.mock``).
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timezone
 from typing import TypedDict
 
@@ -56,6 +57,7 @@ async def run_backtest(
     tickers: list[str],
     start_date: date,
     end_date: date,
+    on_event: Callable[[dict], Awaitable[None]] | None = None,
 ) -> BacktestSummary:
     """Run the full pipeline on all historical transcripts for *tickers*.
 
@@ -72,6 +74,10 @@ async def run_backtest(
     total = 0
     correct = 0
     per_ticker: dict[str, TickerSummary] = {}
+
+    async def _emit(event: dict) -> None:
+        if on_event is not None:
+            await on_event(event)
 
     if not upper_tickers:
         return BacktestSummary(total=0, correct=0, accuracy=0.0, per_ticker={})
@@ -106,9 +112,13 @@ async def run_backtest(
         (s.ticker, s.snapshot_date): s for s in snapshots
     }
 
-    for transcript in transcripts:
+    transcript_total = len(transcripts)
+    await _emit({"type": "start", "total": transcript_total})
+
+    for idx, transcript in enumerate(transcripts, start=1):
         ticker = transcript.ticker
         filing_date = transcript.filing_date
+        date_str = str(filing_date) if filing_date else "unknown"
 
         snapshot = snap_index.get((ticker, filing_date))
         if snapshot is None:
@@ -118,6 +128,8 @@ async def run_backtest(
                 filing_date,
                 transcript.id,
             )
+            await _emit({"type": "skip", "index": idx, "total": transcript_total,
+                         "ticker": ticker, "date": date_str, "reason": "no_price_snapshot"})
             continue
 
         if not transcript.transcript_text:
@@ -126,7 +138,12 @@ async def run_backtest(
                 transcript.id,
                 ticker,
             )
+            await _emit({"type": "skip", "index": idx, "total": transcript_total,
+                         "ticker": ticker, "date": date_str, "reason": "no_transcript_text"})
             continue
+
+        await _emit({"type": "running", "index": idx, "total": transcript_total,
+                     "ticker": ticker, "date": date_str})
 
         # Build price_data dict for the TechnicalAnalyst (matches prices.py output)
         price_data: dict = {
@@ -145,6 +162,8 @@ async def run_backtest(
                 ticker,
                 transcript.id,
             )
+            await _emit({"type": "error", "index": idx, "total": transcript_total,
+                         "ticker": ticker, "date": date_str, "message": "Pipeline failed"})
             continue
 
         predicted_direction = pipeline_result.get("direction")
@@ -171,6 +190,17 @@ async def run_backtest(
         async with get_session() as session:
             session.add(record)
 
+        await _emit({
+            "type": "result",
+            "index": idx,
+            "total": transcript_total,
+            "ticker": ticker,
+            "date": date_str,
+            "direction": predicted_direction,
+            "actual_direction": actual_direction,
+            "was_correct": was_correct,
+        })
+
         # Accumulate counters
         total += 1
         if was_correct:
@@ -190,6 +220,14 @@ async def run_backtest(
 
     if total > 0:
         await update_reputation()
+
+    await _emit({
+        "type": "done",
+        "total": total,
+        "correct": correct,
+        "accuracy": overall_accuracy,
+        "per_ticker": {k: dict(v) for k, v in per_ticker.items()},
+    })
 
     return BacktestSummary(
         total=total,

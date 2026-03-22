@@ -42,7 +42,8 @@ Frontend (React/Next.js)
   └── Run analysis on a ticker
   └── Watch agent debate in real time (streamed)
   └── Ingest transcripts manually into the backtest database
-  └── Backtest results dashboard with per-agent accuracy over time
+  └── Backtest results dashboard with live SSE progress and per-ticker accuracy
+  └── Agent reputation weights table (per-agent accuracy, weight, mini bar)
   └── Historical prediction log
 ```
 
@@ -227,9 +228,10 @@ earnings-agent/
 │   └── api/
 │       ├── routes/
 │       │   ├── analyze.py             # POST /analyze — run on a ticker
-│       │   ├── backtest.py            # POST /backtest — run historical eval
+│       │   ├── backtest.py            # POST /backtest — run historical eval; POST /backtest/stream — SSE progress
 │       │   ├── ingest.py              # POST /ingest — manually ingest a transcript
 │       │   ├── predictions.py        # GET /predictions — history
+│       │   ├── reputation.py         # GET /reputation — agent weights table
 │       │   └── transcripts.py        # GET /transcripts, PATCH /transcripts/{id}/date
 │       └── schemas.py                 # Pydantic request/response schemas
 │
@@ -343,8 +345,8 @@ be ingested manually via the UI.
 The immediate next task is:
 1. Ingest 10–15 historical transcripts via the Ingest page (Motley Fool is the easiest free source)
 2. Use the next trading day after earnings announcement as the date for after-close reporters
-3. Hit `POST /api/v1/backtest` to generate real accuracy data and update agent reputation weights
-4. Verify per-agent weights diverge from 0.2 equal-weight baseline
+3. Hit `POST /api/v1/backtest/stream` (or `/backtest`) to generate real accuracy data and update agent reputation weights
+4. Verify per-agent weights diverge from 0.2 equal-weight baseline — visible in the Agent Reputation Weights table on the Backtest page
 
 Steps 1–11 are complete and tested:
 

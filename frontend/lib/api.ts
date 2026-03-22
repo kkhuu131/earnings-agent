@@ -3,6 +3,8 @@ import type {
   AnalyzeResponse,
   BacktestRequest,
   BacktestResponse,
+  IngestRequest,
+  IngestResponse,
   PredictionRecord,
 } from "./types";
 
@@ -32,6 +34,13 @@ export function getPredictions(ticker?: string, limit = 50): Promise<PredictionR
   if (ticker) params.set("ticker", ticker);
   params.set("limit", String(limit));
   return request<PredictionRecord[]>(`/predictions?${params.toString()}`);
+}
+
+export function ingest(payload: IngestRequest): Promise<IngestResponse> {
+  return request<IngestResponse>("/ingest", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function runBacktest(payload: BacktestRequest): Promise<BacktestResponse> {

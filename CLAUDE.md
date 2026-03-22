@@ -14,7 +14,8 @@ The novel contribution over existing frameworks like TradingAgents is a **reputa
 
 ```
 Data Layer
-  └── SEC EDGAR API → fetch earnings call transcripts (10-Q/10-K filings)
+  └── Financial Modeling Prep (FMP) API → primary transcript source (S&P 500, free tier)
+  └── SEC EDGAR submissions API → fallback transcript source (smaller companies)
   └── yfinance → fetch historical price data for backtesting
 
 Agent Pipeline (LangGraph graph)
@@ -40,6 +41,7 @@ Backtesting Framework
 Frontend (React/Next.js)
   └── Run analysis on a ticker
   └── Watch agent debate in real time (streamed)
+  └── Ingest transcripts manually into the backtest database
   └── Backtest results dashboard with per-agent accuracy over time
   └── Historical prediction log
 ```
@@ -104,7 +106,7 @@ This means over time the system learns which analytical lens is most predictive 
 | Deep reasoning (debate, final decision) | claude-sonnet-4-6 or gpt-4o |
 | Backend API | Python, FastAPI |
 | Database | PostgreSQL via Supabase (hosted) |
-| Transcript data | SEC EDGAR Full-Text Search API (free, no scraping) |
+| Transcript data | FMP API (primary, free tier) + SEC EDGAR submissions API (fallback) |
 | Price data | yfinance (free Python library) |
 | Frontend | React, Next.js, TypeScript |
 | Deployment | Railway or Render (backend), Vercel (frontend) |
@@ -314,13 +316,34 @@ This is the sequence to follow. Do not skip ahead.
 
 ## Current Priority
 
-**NEXT: Step 12 — Polish**
+**Step 13 — Transcript ingestion UI** ✅
+Manual ingestion is needed because FMP deprecated free-tier transcript API access on August 31 2025,
+and SEC EDGAR does not carry transcripts for large-cap companies. The ingest feature lets users paste
+transcripts from any public source (e.g. Motley Fool) to seed the backtest database without requiring
+a paid API subscription.
+- `backend/api/routes/ingest.py` — `POST /ingest`: validates, inserts Transcript row, fetches PriceSnapshot via yfinance, returns summary
+- `backend/api/schemas.py` — added `IngestRequest` and `IngestResponse`
+- `frontend/app/ingest/page.tsx` — form with ticker, quarter picker, date, large textarea; live word count; success card showing price snapshot status and known 30d direction
+- Nav updated: Analyze → History → **Ingest** → Backtest
+
+**NEXT: Seed the backtest database and run end-to-end validation**
+
+Step 12 (Polish) is complete. The immediate next task is:
+1. Add `FMP_API_KEY` to `.env` (free account at financialmodelingprep.com)
+2. Run `python scripts/recon.py` to confirm FMP coverage for your target tickers
+3. Edit `TICKERS` in `scripts/populate_db.py` and run it to seed the DB
+4. Hit `POST /api/v1/backtest` to generate real accuracy data and update agent reputation weights
 
 Steps 1–11 are complete and tested:
 
 **Step 1 — Data pipeline** ✅
-- `backend/data/edgar.py` — SEC EDGAR transcript fetcher with retry/backoff
+- `backend/data/fmp.py` — Financial Modeling Prep transcript fetcher (primary source, S&P 500 coverage)
+- `backend/data/edgar.py` — SEC EDGAR submissions API transcript fetcher (fallback for smaller companies)
+  - Rewrote from EFTS full-text search to submissions API (`data.sec.gov/submissions/CIK{cik}.json`)
+  - Confirmed large-caps (AAPL, NVDA, MSFT etc.) do not file transcripts to EDGAR — FMP covers these
 - `backend/data/prices.py` — yfinance price fetcher with 30d direction
+- `scripts/recon.py` — checks FMP + EDGAR coverage for a list of tickers before populating DB
+- `scripts/populate_db.py` — fetches transcripts (FMP first, EDGAR fallback) + price snapshots → inserts to DB
 - `tests/data/test_edgar.py` + `tests/data/test_prices.py` — 75 tests, all passing
 
 **Step 2 — Database** ✅
@@ -423,9 +446,10 @@ Steps 1–11 are complete and tested:
 **Step 11 — Frontend** ✅
 - `frontend/` — Next.js 16 + TypeScript + Tailwind (App Router), scaffolded with `create-next-app`
 - `frontend/lib/types.ts` — TypeScript interfaces for all API responses: `AnalyzeResponse`, `PredictionRecord`, `BacktestResponse`, `WeightedSignal`, `DebateRound`, etc.
-- `frontend/lib/api.ts` — typed fetch wrapper reading `NEXT_PUBLIC_API_URL`; exports `analyze()`, `getPredictions()`, `runBacktest()`
+- `frontend/lib/api.ts` — typed fetch wrapper reading `NEXT_PUBLIC_API_URL`; exports `analyze()`, `getPredictions()`, `ingest()`, `runBacktest()`
 - `frontend/app/page.tsx` — ticker input + transcript textarea, calls `POST /analyze`, renders `PredictionResult` and toggleable `AgentDebate`
 - `frontend/app/history/page.tsx` — calls `GET /predictions` with optional ticker filter; expandable rows show reasoning and full debate transcript
+- `frontend/app/ingest/page.tsx` — ticker + quarter + date + transcript textarea; calls `POST /ingest`, shows word count, price snapshot status, and 30-day direction if already known
 - `frontend/app/backtest/page.tsx` — ticker tag editor + date range picker, calls `POST /backtest`, renders `ReputationChart`
 - `frontend/components/PredictionResult.tsx` — direction badge (up/down/neutral), confidence bar, per-agent weighted signal grid
 - `frontend/components/AgentDebate.tsx` — bull vs bear argument cards in side-by-side rounds layout with rebuttal lists

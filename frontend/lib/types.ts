@@ -62,6 +62,27 @@ export interface PredictionRecord {
 }
 
 // ---------------------------------------------------------------------------
+// POST /ingest
+// ---------------------------------------------------------------------------
+
+export interface IngestRequest {
+  ticker: string;
+  fiscal_quarter: string;   // e.g. "Q1 2025"
+  filing_date: string;      // ISO date: "2025-01-30"
+  transcript_text: string;
+}
+
+export interface IngestResponse {
+  transcript_id: string;
+  ticker: string;
+  fiscal_quarter: string;
+  filing_date: string;
+  word_count: number;
+  price_snapshot_found: boolean;
+  actual_direction: "up" | "down" | "neutral" | null;
+}
+
+// ---------------------------------------------------------------------------
 // POST /backtest
 // ---------------------------------------------------------------------------
 

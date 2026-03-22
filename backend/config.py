@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     google_api_key: str = ""
 
     # ------------------------------------------------------------------
+    # Transcript data sources
+    # ------------------------------------------------------------------
+    fmp_api_key: str = ""   # Financial Modeling Prep — primary transcript source
+
+    # ------------------------------------------------------------------
     # Supabase
     # ------------------------------------------------------------------
     supabase_url: str = ""

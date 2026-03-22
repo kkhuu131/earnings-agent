@@ -88,3 +88,29 @@ class BacktestResponse(BaseModel):
     correct: int
     accuracy: float
     per_ticker: dict[str, TickerSummary]
+
+
+# ---------------------------------------------------------------------------
+# POST /ingest
+# ---------------------------------------------------------------------------
+
+
+class IngestRequest(BaseModel):
+    """Payload for manually ingesting a transcript into the backtest database."""
+
+    ticker: str
+    fiscal_quarter: str          # e.g. "Q1 2025"
+    filing_date: date            # earnings release date — used to fetch 30d price
+    transcript_text: str
+
+
+class IngestResponse(BaseModel):
+    """Returned after a successful transcript ingestion."""
+
+    transcript_id: uuid.UUID
+    ticker: str
+    fiscal_quarter: str
+    filing_date: date
+    word_count: int
+    price_snapshot_found: bool
+    actual_direction: Optional[str] = None  # "up" | "down" | "neutral" | None

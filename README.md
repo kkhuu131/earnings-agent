@@ -50,16 +50,17 @@ A multi-agent LLM framework that analyzes earnings call transcripts to predict p
 │  FastAPI (3 routes)      │   │  Backtesting + Reputation Loop  │
 │  POST /analyze           │   │  ├── run pipeline on history     │
 │  GET  /predictions       │   │  ├── compare to actual price     │
-│  POST /backtest          │   │  └── update agent weights in DB  │
+│  POST /ingest            │   │  └── update agent weights in DB  │
+│  POST /backtest          │   └─────────────────────────────────┘
 └──────────────┬───────────┘   └─────────────────────────────────┘
                │
                ▼
 ┌──────────────────────────────────────────────┐
 │  Frontend (Next.js)                          │
-│  ├── Analysis UI — run on any ticker         │
-│  ├── Agent Debate — bull vs bear by round    │
-│  ├── History — past predictions with detail  │
-│  └── Backtest — reputation chart by agent   │
+│  ├── Analyze  — run pipeline on any transcript  │
+│  ├── History  — past predictions with debate    │
+│  ├── Ingest   — paste transcripts into DB       │
+│  └── Backtest — reputation chart by agent       │
 └──────────────────────────────────────────────┘
 ```
 
@@ -198,6 +199,37 @@ Retrieve prediction history.
 
 ---
 
+### `POST /api/v1/ingest`
+
+Store a manually pasted transcript in the backtest database. The price snapshot for the earnings date is fetched automatically via yfinance.
+
+**Request**
+```json
+{
+  "ticker": "AAPL",
+  "fiscal_quarter": "Q1 2025",
+  "filing_date": "2025-01-30",
+  "transcript_text": "Good morning and welcome to Apple's Q1 2025 earnings call..."
+}
+```
+
+**Response**
+```json
+{
+  "transcript_id": "a1b2c3d4-...",
+  "ticker": "AAPL",
+  "fiscal_quarter": "Q1 2025",
+  "filing_date": "2025-01-30",
+  "word_count": 12847,
+  "price_snapshot_found": true,
+  "actual_direction": "up"
+}
+```
+
+> **Why this exists:** FMP deprecated free-tier transcript API access in August 2025. SEC EDGAR does not carry transcripts for large-cap companies. The ingest route lets you paste transcripts from any public source (e.g. [Motley Fool](https://www.fool.com/earnings-call-transcripts/)) to seed the backtest database without a paid subscription.
+
+---
+
 ### `POST /api/v1/backtest`
 
 Run the pipeline on historical earnings data and evaluate accuracy.
@@ -264,7 +296,7 @@ The `PortfolioManager` reads these weights from the database at runtime and appl
 | Deep reasoning     | `claude-sonnet-4-6` / `gpt-4o`                     |
 | Backend API        | Python, FastAPI, Uvicorn                            |
 | Database           | PostgreSQL via Supabase (hosted)                    |
-| Transcript data    | SEC EDGAR Full-Text Search API (free, no scraping)  |
+| Transcript data    | Manual ingestion UI + SEC EDGAR submissions API (fallback) |
 | Price data         | yfinance (free Python library)                      |
 | Frontend           | React 19, Next.js 16, TypeScript, Tailwind CSS      |
 | Charts             | Recharts                                            |

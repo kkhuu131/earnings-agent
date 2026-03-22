@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.routes.analyze import router as analyze_router
 from backend.api.routes.backtest import router as backtest_router
+from backend.api.routes.ingest import router as ingest_router
 from backend.api.routes.predictions import router as predictions_router
 
 
@@ -37,4 +38,5 @@ app.add_middleware(
 
 app.include_router(analyze_router, prefix="/api/v1")
 app.include_router(backtest_router, prefix="/api/v1")
+app.include_router(ingest_router, prefix="/api/v1")
 app.include_router(predictions_router, prefix="/api/v1")
